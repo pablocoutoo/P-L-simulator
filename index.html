@@ -699,7 +699,7 @@ const S={c:"AR",lv:"ALL",yr:2026,v:"e",gl:false,cmp:false,cmpScen:null,currency:
 
 function initState(target){
   CS.forEach(c=>{
-    target.gr[c]={};target.ben[c]={};target.benActive[c]={};target.benCrit[c]={};target.otherInv[c]=0;
+    target.gr[c]={};target.ben[c]={};target.benActive[c]={};target.benCrit[c]={};target.otherInv[c]={};LV.forEach(l=>target.otherInv[c][l]=0);
     const defCrit=makeBenCrit(c);
     LV.forEach(l=>{
       target.gr[c][l]=1;target.ben[c][l]={};
@@ -733,7 +733,8 @@ function applyState(snap){
     if(!S.benActive[c]){S.benActive[c]={};}
     LV.forEach(l=>{if(!S.benActive[c][l]){S.benActive[c][l]={};BKS.forEach(bk=>S.benActive[c][l][bk]=true);}});
     if(!S.benCrit[c])S.benCrit[c]={};
-    if(S.otherInv[c]===undefined)S.otherInv[c]=0;
+    if(S.otherInv[c]===undefined||typeof S.otherInv[c]!=='object')S.otherInv[c]={};
+    LV.forEach(l=>{if(S.otherInv[c][l]===undefined)S.otherInv[c][l]=0;});
     LV.forEach(l=>{
       if(!S.benCrit[c][l]){S.benCrit[c][l]=JSON.parse(JSON.stringify(makeBenCrit(c)[l]));}
     });
@@ -747,7 +748,7 @@ function uBenCrit(c,l,bk,field,val){
   S.benCrit[c][l][bk][field]=v;
   render();
 }
-function uOtherInv(c,val){S.otherInv[c]=parseFloat(val)||0;render();if(S.gl)rGlobal();}
+function uOtherInv(c,l,val){if(!S.otherInv[c])S.otherInv[c]={};S.otherInv[c][l]=parseFloat(val)||0;render();if(S.gl)rGlobal();}
 function setCur(cur){S.currency=cur;document.getElementById('cur-usd').classList.toggle('a',cur==='USD');document.getElementById('cur-lcy').classList.toggle('a',cur==='LCY');render();if(S.gl)rGlobal();}
 
 function renderBenActive(c,lv){
@@ -872,6 +873,7 @@ function renderCmpTable(pl,yr,c){
 // ── CALC ──────────────────────────────────────────────────────────────────────
 function calcLv(c,l,yr,st){
   st=st||S;
+  const oi_lv=(st.otherInv&&st.otherInv[c]&&st.otherInv[c][l])||0;
   const us=yr===2026?D[c][l].u26:D[c][l].u27;
   const reg=yr===2026?D[c][l].r26:D[c][l].r27;
   const ben=st.ben[c][l],m=st.gr[c][l],y6=yr===2026;
@@ -924,19 +926,17 @@ function calcLv(c,l,yr,st){
       }
       row[bk]=cost;tot+=cost;
     });
-    row.costes=tot;row.inv=tot;return row;
+    row.costes=tot+oi_lv;row.inv=tot+oi_lv;row.otherInv=oi_lv;return row;
   });
 }
 
 function calcALL(c,yr,st){
   st=st||S;
   const bL={};LV.forEach(l=>bL[l]=calcLv(c,l,yr,st));
-  const oi=(st.otherInv&&st.otherInv[c])||0;
   return MO.map((_,i)=>{
-    const r={users:0,regRate:0,costes:0,inv:0,otherInv:oi};
+    const r={users:0,regRate:0,costes:0,inv:0,otherInv:0};
     BKS.forEach(bk=>r[bk]=0);let wR=0;
-    LV.forEach(l=>{const x=bL[l][i];r.users+=x.users;r.costes+=x.costes;r.inv+=x.costes;wR+=x.regRate*x.users;BKS.forEach(bk=>r[bk]+=x[bk]);});
-    r.costes+=oi;r.inv+=oi;
+    LV.forEach(l=>{const x=bL[l][i];r.users+=x.users;r.costes+=x.costes;r.inv+=x.costes;r.otherInv+=(x.otherInv||0);wR+=x.regRate*x.users;BKS.forEach(bk=>r[bk]+=x[bk]);});
     r.regRate=r.users>0?wR/r.users:0;return r;
   });
 }
@@ -1126,11 +1126,15 @@ function render(){
   // Other investments card
   const oic=document.getElementById("oic");
   const curSym=S.currency==='LCY'?(CUR_SYM[c]||'$'):'$';
-  oic.innerHTML=`<div style="font-size:9px;color:var(--g3);margin-bottom:8px">Costes adicionales mensuales fijos para ${c}</div>
-    <div style="display:flex;align-items:center;gap:8px">
-      <div class="if" style="width:auto"><input type="number" min="0" step="100" value="${S.otherInv[c]||0}" onchange="uOtherInv('${c}',this.value)" style="width:80px"/><span class="is">${curSym}/mes</span></div>
-      ${(S.otherInv[c]||0)>0?`<span style="font-size:10px;color:var(--g4)">→ ${fM((S.otherInv[c]||0)*12,c)} anuales</span>`:''}
-    </div>`;
+  const oiRows=LV.map(l=>{
+    const val=(S.otherInv[c]&&S.otherInv[c][l])||0;
+    const ann=val*12;
+    return`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+      <span style="font-size:9px;color:var(--g3);width:52px;flex-shrink:0">${lvD(l)}</span>
+      <div class="if" style="width:auto"><input type="number" min="0" step="100" value="${val}" onchange="uOtherInv('${c}','${l}',this.value)" style="width:80px"/><span class="is">${curSym}/mes</span></div>
+      ${val>0?`<span style="font-size:10px;color:var(--g4)">→ ${fM(ann,c)}/año</span>`:''}
+    </div>`;}).join("");
+  oic.innerHTML=`<div style="font-size:9px;color:var(--g3);margin-bottom:8px">Costes adicionales mensuales fijos para ${c}</div>${oiRows}`;
 
   // Monthly table
   const trs=[
